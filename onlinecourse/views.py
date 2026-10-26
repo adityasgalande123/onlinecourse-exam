@@ -86,7 +86,7 @@ class CourseListView(generic.ListView):
 
 class CourseDetailView(generic.DetailView):
     model = Course
-    template_name = 'onlinecourse/course_detail_bootstrap.html'
+    template_name = 'onlinecourse/course_details_bootstrap.html'
 
 
 def enroll(request, course_id):
@@ -134,3 +134,51 @@ def enroll(request, course_id):
 
 
 
+
+
+# ---- Exam views ----
+from django.shortcuts import render, get_object_or_404
+from django.http import HttpResponseRedirect
+from django.urls import reverse
+from .models import Course, Enrollment, Question, Choice, Submission
+
+
+def extract_answers(request):
+    submitted_answers = []
+    for key in request.POST:
+        if key.startswith('choice'):
+            submitted_answers.append(int(request.POST[key]))
+    return submitted_answers
+
+
+def submit(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    user = request.user
+    enrollment = Enrollment.objects.get(user=user, course=course)
+    submission = Submission.objects.create(enrollment=enrollment)
+    choices = extract_answers(request)
+    submission.choices.set(choices)
+    return HttpResponseRedirect(
+        reverse('onlinecourse:show_exam_result', args=(course.id, submission.id))
+    )
+
+
+def show_exam_result(request, course_id, submission_id):
+    course = get_object_or_404(Course, pk=course_id)
+    submission = get_object_or_404(Submission, pk=submission_id)
+    selected_ids = [c.id for c in submission.choices.all()]
+
+    total_score = 0
+    possible_score = 0
+    for question in course.question_set.all():
+        possible_score += question.grade
+        if question.is_get_score(selected_ids):
+            total_score += question.grade
+
+    grade = int(total_score / possible_score * 100) if possible_score else 0
+    context = {
+        'course': course,
+        'selected_ids': selected_ids,
+        'grade': grade,
+    }
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
